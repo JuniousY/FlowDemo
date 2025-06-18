@@ -1,0 +1,5 @@
+**/target/
+**/docker-compose*
+**/.git
+**/*.md
+**/test-results/
