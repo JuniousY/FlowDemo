@@ -41,11 +41,13 @@ public class TaskServiceImpl implements TaskService {
         String lockKey = "task:create:" + dto.getReqId();
 
         try {
-            return lockExecutor.executeWithLock(lockKey, 500, 1000, TimeUnit.MILLISECONDS,
+            ServiceResp<TaskDTO> resp = lockExecutor.executeWithLock(lockKey, 500, 1000, TimeUnit.MILLISECONDS,
                     () -> {
-                        ServiceResp<Task> resp = taskServiceExecutor.createTaskHandler(dto);
-                        return getTaskDTOServiceResp(resp);
+                        ServiceResp<Task> createResp = taskServiceExecutor.createTaskHandler(dto);
+                        return getTaskDTOServiceResp(createResp);
                     });
+            taskServiceExecutor.evictProjectTasks(dto.getProjectId());
+            return resp;
         } catch (Exception e) {
             return ServiceResp.fail(ResponseCode.BUSINESS_ERROR.getCode(), e.getMessage());
         }
@@ -78,6 +80,7 @@ public class TaskServiceImpl implements TaskService {
         try {
             ServiceResp<Task> resp = lockExecutor.executeWithLock(lockKey, 500, 1000, TimeUnit.MILLISECONDS,
                     () -> taskServiceExecutor.updateTaskHandler(dto));
+            taskServiceExecutor.evictProjectTasks(dto.getProjectId());
             return getTaskDTOServiceResp(resp);
         } catch (Exception e) {
             return ServiceResp.fail(ResponseCode.BUSINESS_ERROR.getCode(), e.getMessage());
@@ -118,6 +121,14 @@ public class TaskServiceImpl implements TaskService {
         if (req.getProjectId() == null) {
             return ServiceResp.fail(ResponseCode.BAD_REQUEST.getCode(), "项目 ID 不能为空");
         }
+
+        // 缓存查询
+        List<TaskDTO> cached = taskServiceExecutor.getProjectCachedTasks(req.getProjectId());
+        if (cached != null) {
+            return ServiceResp.success(cached);
+        }
+
+        // 数据库查询
         List<Task> tasks = taskMapper.queryTasks(req);
         List<TaskDTO> dtos = tasks.stream().map(task -> {
             TaskDTO dto = new TaskDTO();
@@ -125,6 +136,10 @@ public class TaskServiceImpl implements TaskService {
             genTaskDTOInfos(dto);
             return dto;
         }).collect(Collectors.toList());
+
+        // 缓存结果
+        taskServiceExecutor.cacheProjectTasks(req.getProjectId(), dtos);
+
         return ServiceResp.success(dtos);
     }
 }

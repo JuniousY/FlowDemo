@@ -1,5 +1,6 @@
 package org.dev.flowdemo.service;
 
+import jakarta.annotation.PostConstruct;
 import org.dev.flowdemo.constants.ResponseCode;
 import org.dev.flowdemo.constants.TaskConstants;
 import org.dev.flowdemo.dto.TaskDTO;
@@ -10,12 +11,18 @@ import org.dev.flowdemo.mapper.TaskMapper;
 import org.dev.flowdemo.model.Project;
 import org.dev.flowdemo.model.Task;
 import org.dev.flowdemo.model.TaskLog;
+import org.redisson.api.RLocalCachedMap;
+import org.redisson.api.RedissonClient;
+import org.redisson.api.options.LocalCachedMapOptions;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
 
 @Service
 public class TaskServiceExecutor {
@@ -28,6 +35,21 @@ public class TaskServiceExecutor {
 
     @Autowired
     private TaskMapper taskMapper;
+
+    @Autowired
+    private RedissonClient redissonClient;
+
+    private RLocalCachedMap<String, List<TaskDTO>> taskCache;
+
+    @PostConstruct
+    public void initCache() {
+        LocalCachedMapOptions<String, List<TaskDTO>> options = LocalCachedMapOptions.<String, List<TaskDTO>>name("task_cache_by_project")
+                .syncStrategy(LocalCachedMapOptions.SyncStrategy.INVALIDATE)
+                .evictionPolicy(LocalCachedMapOptions.EvictionPolicy.LRU)
+                .cacheSize(100)
+                .timeToLive(Duration.of(10, ChronoUnit.MINUTES));
+        taskCache = redissonClient.getLocalCachedMap(options);
+    }
 
     @Transactional
     public ServiceResp<Task> createTaskHandler(TaskDTO dto) {
@@ -89,5 +111,21 @@ public class TaskServiceExecutor {
         taskLogMapper.insert(taskLog);
 
         return ServiceResp.success(task);
+    }
+
+    public List<TaskDTO> getProjectCachedTasks(Long projectId) {
+        return taskCache.get(buildProjectKey(projectId));
+    }
+
+    public void cacheProjectTasks(Long projectId, List<TaskDTO> dtos) {
+        taskCache.put(buildProjectKey(projectId), dtos);
+    }
+
+    public void evictProjectTasks(Long projectId) {
+        taskCache.remove(buildProjectKey(projectId));
+    }
+
+    private String buildProjectKey(Long projectId) {
+        return "project:" + projectId;
     }
 }
