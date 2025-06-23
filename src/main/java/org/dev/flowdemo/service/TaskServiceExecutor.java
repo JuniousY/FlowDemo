@@ -95,7 +95,7 @@ public class TaskServiceExecutor {
         }
 
         LocalDateTime now = LocalDateTime.now();
-        BeanUtils.copyProperties(dto, task, "id", "createdAt");
+        BeanUtils.copyProperties(dto, task, "id", "createdAt", "updatedAt", "version");
         task.setUpdatedAt(now);
 
         int rows = taskMapper.updateById(task);
