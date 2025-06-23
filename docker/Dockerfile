@@ -1,18 +1,21 @@
 # 阶段1：构建阶段
-FROM amazoncorretto:21 as builder
+FROM maven:3.9.9-amazoncorretto-21 AS builder
 
 # 设置工作目录
 WORKDIR /app
-
-# 利用缓存层加速构建（先复制 pom.xml 和依赖）
-COPY pom.xml .
+COPY pom.xml ./
 COPY .mvn .mvn
-# 下载依赖（此层可缓存）
-RUN ./.mvn/mvnw dependency:go-offline
+COPY mvnw ./
+
+# 配置 Maven 国内镜像
+COPY docker/settings.xml /root/.m2/settings.xml
+
+# 下载依赖
+RUN ./mvnw dependency:go-offline
 
 # 复制源码并构建
-COPY src src
-RUN ./.mvn/mvnw clean package -DskipTests
+COPY src ./src
+RUN ./mvnw clean package -DskipTests
 
 # 阶段2：运行阶段
 FROM amazoncorretto:21
